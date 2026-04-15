@@ -1,11 +1,15 @@
 const App = {
-    audioCtx: null, analyser: null, buf: new Float32Array(2048), isPaused: false,
+    audioCtx: null, analyser: null,
+    // Buffer increased to 16384 for ultra-low frequency resolution
+    buf: new Float32Array(16384), 
+    isPaused: false,
     pitchHistory: [], maxHistory: 100, currentCenterMidi: 60,
     droneOscs: [], droneGain: null, droneActive: false, selectedDrone: "C",
     isMetroOn: false, metroTimeout: null, tempo: 120,
     refA4: 440, chromatic: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
 
     init() { this.setupNav(); this.bindEvents(); },
+    
     bindEvents() {
         document.getElementById('start-app-btn').onclick = () => this.start();
         document.getElementById('freeze-btn').onclick = () => { this.isPaused = !this.isPaused; };
@@ -25,31 +29,50 @@ const App = {
             if(this.droneGain) this.droneGain.gain.setTargetAtTime(e.target.value, this.audioCtx.currentTime, 0.05);
         };
     },
+
     async start() {
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Crucial: Turn off browser processing that filters out sub-bass
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+        });
         const source = this.audioCtx.createMediaStreamSource(stream);
         this.analyser = this.audioCtx.createAnalyser();
-        this.analyser.fftSize = 2048; source.connect(this.analyser);
+        this.analyser.fftSize = 16384; // Massive FFT for sub-35Hz detection
+        source.connect(this.analyser);
         document.getElementById('modal-permission').style.display = 'none';
         this.resizeCanvas(); this.loop();
     },
-    toggleMetronome() {
-        this.isMetroOn = !this.isMetroOn;
-        document.getElementById('metro-toggle').innerText = this.isMetroOn ? 'Stop' : 'Start';
-        if (this.isMetroOn) this.playTick();
-        else clearTimeout(this.metroTimeout);
+
+    detectPitch(data, sr) {
+        let sum = 0; for(let i=0; i<data.length; i++) sum += data[i]*data[i];
+        const rms = Math.sqrt(sum/data.length);
+        if(rms < 0.005) return -1; // Ultra-sensitive for low-energy bass strings
+
+        let c = new Float32Array(data.length);
+        for(let i=0; i<data.length; i++) {
+            for(let j=0; j<data.length-i; j++) {
+                c[i] += data[j]*data[j+i];
+            }
+        }
+
+        let d=0; while(c[d] > c[d+1]) d++;
+        let maxV = -1, maxP = -1;
+        for(let i=d; i<data.length; i++) {
+            if(c[i] > maxV) { maxV = c[i]; maxP = i; }
+        }
+
+        // Parabolic Interpolation for sub-Hz accuracy at Low C
+        let T0 = maxP;
+        if (maxP > 0 && maxP < data.length - 1) {
+            const left = c[maxP - 1], right = c[maxP + 1];
+            const p = (right - left) / (2 * (2 * maxV - left - right));
+            T0 = maxP + p;
+        }
+
+        return sr / T0;
     },
-    playTick() {
-        if (!this.isMetroOn) return;
-        const osc = this.audioCtx.createOscillator(); const gain = this.audioCtx.createGain();
-        osc.frequency.value = 1000; gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.05);
-        osc.connect(gain); gain.connect(this.audioCtx.destination);
-        osc.start(); osc.stop(this.audioCtx.currentTime + 0.05);
-        this.metroTimeout = setTimeout(() => this.playTick(), (60 / this.tempo) * 1000);
-    },
-    // DRONE: Tanpura-Style (Root + 5th + Octave)
+
     startDrone() {
         if(this.droneOscs.length > 0) this.stopDrone();
         this.droneGain = this.audioCtx.createGain();
@@ -59,10 +82,10 @@ const App = {
         filter.Q.setValueAtTime(0.5, this.audioCtx.currentTime);
         const root = this.getFreq(this.selectedDrone);
         const harmonics = [
-            { mult: 1,   type: 'triangle', gain: 0.4 }, 
+            { mult: 1, type: 'triangle', gain: 0.4 }, 
             { mult: 1.5, type: 'triangle', gain: 0.25 },
-            { mult: 2,   type: 'sine',     gain: 0.15 },
-            { mult: 0.5, type: 'sine',     gain: 0.2 }  
+            { mult: 2, type: 'sine', gain: 0.15 },
+            { mult: 0.5, type: 'sine', gain: 0.2 }  
         ];
         harmonics.forEach((h) => {
             const o = this.audioCtx.createOscillator();
@@ -78,6 +101,7 @@ const App = {
         this.droneGain.gain.linearRampToValueAtTime(vol, this.audioCtx.currentTime + 1.2);
         filter.connect(this.droneGain); this.droneGain.connect(this.audioCtx.destination);
     },
+
     updateDronePitch() {
         const root = this.getFreq(this.selectedDrone);
         const multipliers = [1, 1.5, 2, 0.5]; 
@@ -85,6 +109,7 @@ const App = {
             o.frequency.setTargetAtTime(root * multipliers[i], this.audioCtx.currentTime, 0.4);
         });
     },
+
     stopDrone() {
         if (this.droneGain) this.droneGain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.1);
         setTimeout(() => { 
@@ -92,17 +117,9 @@ const App = {
             this.droneOscs = []; 
         }, 150);
     },
+
     getFreq(n) { return {"C":130.8,"C#":138.6,"D":146.8,"D#":155.6,"E":164.8,"F":174.6,"F#":185,"G":196,"G#":207.7,"A":220,"A#":233.1,"B":246.9}[n]; },
-    detectPitch(data, sr) {
-        let sum = 0; for(let i=0; i<data.length; i++) sum += data[i]*data[i];
-        if(Math.sqrt(sum/data.length) < 0.02) return -1;
-        let c = new Float32Array(data.length);
-        for(let i=0; i<data.length; i++) { for(let j=0; j<data.length-i; j++) c[i] += data[j]*data[j+i]; }
-        let d=0; while(c[d]>c[d+1]) d++;
-        let maxV = -1, maxP = -1;
-        for(let i=d; i<data.length; i++) { if(c[i]>maxV) { maxV=c[i]; maxP=i; } }
-        return sr/maxP;
-    },
+    
     drawHistogram() {
         const c = document.getElementById('history-canvas'); if(!c) return;
         const ctx = c.getContext('2d'); const w = c.width, h = c.height;
@@ -125,6 +142,7 @@ const App = {
         });
         ctx.stroke();
     },
+
     loop() {
         if(!this.isPaused && this.analyser) {
             this.analyser.getFloatTimeDomainData(this.buf);
@@ -145,7 +163,26 @@ const App = {
         }
         requestAnimationFrame(() => this.loop());
     },
+
     resizeCanvas() { const c = document.getElementById('history-canvas'); if(c) { c.width = c.clientWidth; c.height = c.clientHeight; } },
+    
+    toggleMetronome() {
+        this.isMetroOn = !this.isMetroOn;
+        document.getElementById('metro-toggle').innerText = this.isMetroOn ? 'Stop' : 'Start';
+        if (this.isMetroOn) this.playTick();
+        else clearTimeout(this.metroTimeout);
+    },
+    
+    playTick() {
+        if (!this.isMetroOn) return;
+        const osc = this.audioCtx.createOscillator(); const gain = this.audioCtx.createGain();
+        osc.frequency.value = 1000; gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.05);
+        osc.connect(gain); gain.connect(this.audioCtx.destination);
+        osc.start(); osc.stop(this.audioCtx.currentTime + 0.05);
+        this.metroTimeout = setTimeout(() => this.playTick(), (60 / this.tempo) * 1000);
+    },
+
     setupNav() {
         document.querySelectorAll('.nav-item').forEach(btn => {
             btn.onclick = () => {
