@@ -1,6 +1,5 @@
 const App = {
     audioCtx: null, analyser: null,
-    // Buffer increased to 16384 for ultra-low frequency resolution
     buf: new Float32Array(16384), 
     isPaused: false,
     pitchHistory: [], maxHistory: 100, currentCenterMidi: 60,
@@ -8,7 +7,7 @@ const App = {
     isMetroOn: false, metroTimeout: null, tempo: 120,
     refA4: 440, chromatic: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
 
-    init() { this.setupNav(); this.bindEvents(); },
+    init() { this.setupNav(); this.bindEvents(); this.registerPWA(); },
     
     bindEvents() {
         document.getElementById('start-app-btn').onclick = () => this.start();
@@ -32,13 +31,12 @@ const App = {
 
     async start() {
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        // Crucial: Turn off browser processing that filters out sub-bass
         const stream = await navigator.mediaDevices.getUserMedia({ 
             audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
         });
         const source = this.audioCtx.createMediaStreamSource(stream);
         this.analyser = this.audioCtx.createAnalyser();
-        this.analyser.fftSize = 16384; // Massive FFT for sub-35Hz detection
+        this.analyser.fftSize = 16384; 
         source.connect(this.analyser);
         document.getElementById('modal-permission').style.display = 'none';
         this.resizeCanvas(); this.loop();
@@ -47,13 +45,11 @@ const App = {
     detectPitch(data, sr) {
         let sum = 0; for(let i=0; i<data.length; i++) sum += data[i]*data[i];
         const rms = Math.sqrt(sum/data.length);
-        if(rms < 0.005) return -1; // Ultra-sensitive for low-energy bass strings
+        if(rms < 0.005) return -1; 
 
         let c = new Float32Array(data.length);
         for(let i=0; i<data.length; i++) {
-            for(let j=0; j<data.length-i; j++) {
-                c[i] += data[j]*data[j+i];
-            }
+            for(let j=0; j<data.length-i; j++) { c[i] += data[j]*data[j+i]; }
         }
 
         let d=0; while(c[d] > c[d+1]) d++;
@@ -62,14 +58,12 @@ const App = {
             if(c[i] > maxV) { maxV = c[i]; maxP = i; }
         }
 
-        // Parabolic Interpolation for sub-Hz accuracy at Low C
         let T0 = maxP;
         if (maxP > 0 && maxP < data.length - 1) {
             const left = c[maxP - 1], right = c[maxP + 1];
             const p = (right - left) / (2 * (2 * maxV - left - right));
             T0 = maxP + p;
         }
-
         return sr / T0;
     },
 
@@ -77,9 +71,7 @@ const App = {
         if(this.droneOscs.length > 0) this.stopDrone();
         this.droneGain = this.audioCtx.createGain();
         const filter = this.audioCtx.createBiquadFilter();
-        filter.type = "lowpass";
-        filter.frequency.setValueAtTime(500, this.audioCtx.currentTime);
-        filter.Q.setValueAtTime(0.5, this.audioCtx.currentTime);
+        filter.type = "lowpass"; filter.frequency.setValueAtTime(500, this.audioCtx.currentTime);
         const root = this.getFreq(this.selectedDrone);
         const harmonics = [
             { mult: 1, type: 'triangle', gain: 0.4 }, 
@@ -88,13 +80,10 @@ const App = {
             { mult: 0.5, type: 'sine', gain: 0.2 }  
         ];
         harmonics.forEach((h) => {
-            const o = this.audioCtx.createOscillator();
-            o.type = h.type;
+            const o = this.audioCtx.createOscillator(); o.type = h.type;
             o.frequency.setValueAtTime(root * h.mult, this.audioCtx.currentTime);
-            const g = this.audioCtx.createGain();
-            g.gain.value = h.gain;
-            o.connect(g); g.connect(filter);
-            o.start(); this.droneOscs.push(o);
+            const g = this.audioCtx.createGain(); g.gain.value = h.gain;
+            o.connect(g); g.connect(filter); o.start(); this.droneOscs.push(o);
         });
         const vol = document.getElementById('drone-volume').value;
         this.droneGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
@@ -112,10 +101,7 @@ const App = {
 
     stopDrone() {
         if (this.droneGain) this.droneGain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.1);
-        setTimeout(() => { 
-            this.droneOscs.forEach(o => { try{o.stop();}catch(e){} }); 
-            this.droneOscs = []; 
-        }, 150);
+        setTimeout(() => { this.droneOscs.forEach(o => { try{o.stop();}catch(e){} }); this.droneOscs = []; }, 150);
     },
 
     getFreq(n) { return {"C":130.8,"C#":138.6,"D":146.8,"D#":155.6,"E":164.8,"F":174.6,"F#":185,"G":196,"G#":207.7,"A":220,"A#":233.1,"B":246.9}[n]; },
@@ -191,6 +177,14 @@ const App = {
                 if(btn.dataset.view === 'analyze') setTimeout(() => this.resizeCanvas(), 50);
             };
         });
+    },
+
+    registerPWA() {
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(() => {});
+            });
+        }
     }
 };
 App.init();
