@@ -1,195 +1,170 @@
 const App = {
     audioCtx: null,
     analyser: null,
-    microphone: null,
+    buf: new Float32Array(2048),
     isPaused: false,
-    history: [],
-    maxHistory: 100,
+    pitchHistory: [], // Stores last 200 pitch readings
+    maxHistory: 200,
 
-    // Range Test
-    minFreq: Infinity,
-    maxFreq: -Infinity,
+    // Range data
+    minF: Infinity, maxF: -Infinity,
 
     // Metronome
-    isMetroRunning: false,
-    tempo: 120,
-    metroTimeout: null,
+    metroActive: false, tempo: 120, metroTimer: null,
 
-    // Settings
-    refPitch: 440,
-    threshold: 0.01,
-    notation: 'english',
+    // Config
+    ref: 440, thresh: 0.01, notation: 'english',
     notes: {
-        english: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
-        solfege: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si']
+        english: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
+        solfege: ['Do','Do#','Re','Re#','Mi','Fa','Fa#','Sol','Sol#','La','La#','Si']
     },
 
     init() {
-        this.bindEvents();
-        this.setupNavigation();
-        this.setupCanvases();
+        this.setupNav();
+        this.bindUI();
+        window.addEventListener('resize', () => this.resizeCanvas());
     },
 
-    setupCanvases() {
-        this.hCanvas = document.getElementById('history-canvas');
-        this.wCanvas = document.getElementById('waveform-canvas');
-        this.hCtx = this.hCanvas.getContext('2d');
-        this.wCtx = this.wCanvas.getContext('2d');
-        
-        // Match resolution to display size
-        this.hCanvas.width = this.hCanvas.offsetWidth;
-        this.hCanvas.height = this.hCanvas.offsetHeight;
-        this.wCanvas.width = this.wCanvas.offsetWidth;
-        this.wCanvas.height = this.wCanvas.offsetHeight;
-    },
-
-    async startAudio() {
-        try {
-            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.microphone = this.audioCtx.createMediaStreamSource(stream);
-            this.analyser = this.audioCtx.createAnalyser();
-            this.analyser.fftSize = 2048;
-            this.microphone.connect(this.analyser);
-            
-            document.getElementById('modal-permission').style.display = 'none';
-            document.getElementById('connection-status').innerText = 'System Live';
-            this.update();
-        } catch (e) { alert('Microphone access is required.'); }
-    },
-
-    bindEvents() {
-        document.getElementById('start-app-btn').onclick = () => this.startAudio();
-        
-        document.getElementById('freeze-btn').onclick = () => {
+    bindUI() {
+        document.getElementById('start-app-btn').onclick = () => this.start();
+        document.getElementById('freeze-btn').onclick = (e) => {
             this.isPaused = !this.isPaused;
-            document.querySelector('#freeze-btn i').setAttribute('data-lucide', this.isPaused ? 'play' : 'pause');
+            const icon = document.querySelector('#freeze-btn i');
+            icon.setAttribute('data-lucide', this.isPaused ? 'play' : 'pause');
             lucide.createIcons();
         };
 
-        const metroBtn = document.getElementById('metro-toggle');
-        metroBtn.onclick = () => {
-            this.isMetroRunning = !this.isMetroRunning;
-            metroBtn.innerText = this.isMetroRunning ? 'Stop Metronome' : 'Start Metronome';
-            if (this.isMetroRunning) this.playClick();
-        };
-
+        // Metronome
         document.getElementById('bpm-slider').oninput = (e) => {
             this.tempo = e.target.value;
             document.getElementById('bpm-value').innerText = this.tempo;
         };
+        document.getElementById('metro-toggle').onclick = (e) => {
+            this.metroActive = !this.metroActive;
+            e.target.innerText = this.metroActive ? 'Stop' : 'Start';
+            if(this.metroActive) this.runMetro();
+        };
 
+        // Range
         document.getElementById('reset-range').onclick = () => {
-            this.minFreq = Infinity; this.maxFreq = -Infinity;
+            this.minF = Infinity; this.maxF = -Infinity;
             document.getElementById('range-low').innerText = '--';
             document.getElementById('range-high').innerText = '--';
         };
-
-        document.getElementById('setting-notation').onchange = (e) => this.notation = e.target.value;
-        document.getElementById('setting-threshold').oninput = (e) => this.threshold = parseFloat(e.target.value);
     },
 
-    playClick() {
-        if (!this.isMetroRunning) return;
+    async start() {
+        try {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const source = this.audioCtx.createMediaStreamSource(stream);
+            this.analyser = this.audioCtx.createAnalyser();
+            this.analyser.fftSize = 2048;
+            source.connect(this.analyser);
+            
+            document.getElementById('modal-permission').style.display = 'none';
+            this.resizeCanvas();
+            this.loop();
+        } catch (e) { alert("Mic access required for tuner."); }
+    },
+
+    runMetro() {
+        if(!this.metroActive) return;
         const osc = this.audioCtx.createOscillator();
-        const gain = this.audioCtx.createGain();
-        osc.frequency.setValueAtTime(1000, this.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.1);
-        osc.connect(gain); gain.connect(this.audioCtx.destination);
+        const g = this.audioCtx.createGain();
+        osc.frequency.value = 1200;
+        g.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.1);
+        osc.connect(g); g.connect(this.audioCtx.destination);
         osc.start(); osc.stop(this.audioCtx.currentTime + 0.1);
-        this.metroTimeout = setTimeout(() => this.playClick(), (60 / this.tempo) * 1000);
+        setTimeout(() => this.runMetro(), (60/this.tempo)*1000);
     },
 
-    autoCorrelate(buf, sampleRate) {
-        let rms = 0;
-        for (let i=0; i<buf.length; i++) rms += buf[i]*buf[i];
-        if (Math.sqrt(rms/buf.length) < this.threshold) return -1;
+    // YIN-lite / Autocorrelation
+    getPitch(data, sr) {
+        let sum = 0;
+        for (let i=0; i<data.length; i++) sum += data[i]*data[i];
+        if (Math.sqrt(sum/data.length) < this.thresh) return -1;
 
-        let r1=0, r2=buf.length-1, thres=0.2;
-        for (let i=0; i<buf.length/2; i++) if (Math.abs(buf[i])<thres) { r1=i; break; }
-        for (let i=1; i<buf.length/2; i++) if (Math.abs(buf[buf.length-i])<thres) { r2=buf.length-i; break; }
-        buf = buf.slice(r1,r2);
-
-        let c = new Array(buf.length).fill(0);
-        for (let i=0; i<buf.length; i++)
-            for (let j=0; j<buf.length-i; j++) c[i] = c[i] + buf[j]*buf[j+i];
-
+        let c = new Float32Array(data.length).fill(0);
+        for (let i=0; i<data.length; i++) {
+            for (let j=0; j<data.length-i; j++) c[i] += data[j]*data[j+i];
+        }
         let d=0; while (c[d]>c[d+1]) d++;
-        let maxval=-1, maxpos=-1;
-        for (let i=d; i<buf.length; i++) if (c[i]>maxval) { maxval=c[i]; maxpos=i; }
-        return sampleRate/maxpos;
+        let maxVal = -1, maxPos = -1;
+        for (let i=d; i<data.length; i++) {
+            if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+        }
+        return sr/maxPos;
     },
 
-    drawWaveform(buf) {
-        const ctx = this.wCtx;
-        ctx.clearRect(0, 0, this.wCanvas.width, this.wCanvas.height);
-        ctx.strokeStyle = '#38bdf8';
+    drawHistogram() {
+        const canvas = document.getElementById('history-canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0, canvas.width, canvas.height);
+        
+        ctx.strokeStyle = '#0ea5e9';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        const sliceWidth = this.wCanvas.width / buf.length;
-        let x = 0;
-        for (let i = 0; i < buf.length; i++) {
-            const v = buf[i] * 0.5 + 0.5;
-            const y = v * this.wCanvas.height;
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            x += sliceWidth;
+        
+        const step = canvas.width / this.maxHistory;
+        for(let i=0; i<this.pitchHistory.length; i++) {
+            const p = this.pitchHistory[i];
+            const x = i * step;
+            // Map freq to Y (log scale from 50Hz to 1500Hz)
+            const y = canvas.height - (Math.log2(p/50) * (canvas.height/5));
+            if(i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         ctx.stroke();
     },
 
-    drawHistory() {
-        const ctx = this.hCtx;
-        ctx.clearRect(0, 0, this.hCanvas.width, this.hCanvas.height);
-        ctx.strokeStyle = '#4ade80';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        this.history.forEach((f, i) => {
-            const x = (i / this.maxHistory) * this.hCanvas.width;
-            const y = this.hCanvas.height - (Math.log10(f/20) / Math.log10(2000/20) * this.hCanvas.height);
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-    },
+    loop() {
+        if(!this.isPaused) {
+            this.analyser.getFloatTimeDomainData(this.buf);
+            const freq = this.getPitch(this.buf, this.audioCtx.sampleRate);
 
-    update() {
-        if (!this.isPaused) {
-            const buf = new Float32Array(2048);
-            this.analyser.getFloatTimeDomainData(buf);
-            this.drawWaveform(buf);
+            if(freq !== -1 && freq < 2000) {
+                const h = Math.round(12 * Math.log2(freq / this.ref));
+                const noteIdx = (h + 9) % 12;
+                const noteName = this.notes[this.notation][noteIdx < 0 ? noteIdx + 12 : noteIdx];
+                const oct = Math.floor((h + 9) / 12) + 4;
+                const cents = Math.floor(1200 * Math.log2(freq / (this.ref * Math.pow(2, h/12))));
 
-            const pitch = this.autoCorrelate(buf, this.audioCtx.sampleRate);
-            if (pitch !== -1 && pitch < 3000) {
-                const note = this.getNote(pitch);
-                document.getElementById('note-name').innerText = note.name;
-                document.getElementById('note-octave').innerText = note.octave;
-                document.getElementById('frequency').innerText = pitch.toFixed(1);
-                document.getElementById('tuner-needle').style.transform = `translateX(${note.cents * 2}px)`;
+                // Update UI
+                document.getElementById('note-name').innerText = noteName;
+                document.getElementById('note-octave').innerText = oct;
+                document.getElementById('frequency').innerText = freq.toFixed(1);
+                
+                // Needle: -50 cents to +50 cents mapped to -45% to +45% container width
+                const needle = document.getElementById('tuner-needle');
+                const percent = (cents / 50) * 45; 
+                needle.style.transform = `translateX(${percent}vw)`;
 
-                this.history.push(pitch);
-                if (this.history.length > this.maxHistory) this.history.shift();
-                this.drawHistory();
+                // History
+                this.pitchHistory.push(freq);
+                if(this.pitchHistory.length > this.maxHistory) this.pitchHistory.shift();
+                this.drawHistogram();
 
-                if (pitch < this.minFreq) { this.minFreq = pitch; document.getElementById('range-low').innerText = note.name + note.octave; }
-                if (pitch > this.maxFreq) { this.maxFreq = pitch; document.getElementById('range-high').innerText = note.name + note.octave; }
+                // Range
+                if(freq < this.minF) { this.minF = freq; document.getElementById('range-low').innerText = noteName+oct; }
+                if(freq > this.maxF) { this.maxF = freq; document.getElementById('range-high').innerText = noteName+oct; }
             }
         }
-        requestAnimationFrame(() => this.update());
+        requestAnimationFrame(() => this.loop());
     },
 
-    getNote(freq) {
-        const h = Math.round(12 * Math.log2(freq / this.refPitch));
-        const oct = Math.floor((h + 9) / 12) + 4;
-        const idx = (h + 9) % 12;
-        const cents = Math.floor(1200 * Math.log2(freq / (this.refPitch * Math.pow(2, h/12))));
-        return { name: this.notes[this.notation][idx < 0 ? idx + 12 : idx], octave: oct, cents: cents };
+    resizeCanvas() {
+        const c = document.getElementById('history-canvas');
+        c.width = c.clientWidth;
+        c.height = c.clientHeight;
     },
 
-    setupNavigation() {
-        document.querySelectorAll('.nav-item').forEach(btn => {
-            btn.onclick = () => {
-                document.querySelectorAll('.nav-item, .view').forEach(el => el.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById(`view-${btn.dataset.view}`).classList.add('active');
+    setupNav() {
+        document.querySelectorAll('.nav-item').forEach(n => {
+            n.onclick = () => {
+                document.querySelectorAll('.nav-item, .view').forEach(x => x.classList.remove('active'));
+                n.classList.add('active');
+                document.getElementById(`view-${n.dataset.view}`).classList.add('active');
+                if(n.dataset.view === 'analyze') this.resizeCanvas();
             };
         });
     }
