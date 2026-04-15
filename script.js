@@ -49,28 +49,40 @@ const App = {
         osc.start(); osc.stop(this.audioCtx.currentTime + 0.05);
         this.metroTimeout = setTimeout(() => this.playTick(), (60 / this.tempo) * 1000);
     },
-    // DRONE: Continuous Play Fix
+    // DRONE: Tanpura-Style (Root + 5th + Octave)
     startDrone() {
         if(this.droneOscs.length > 0) this.stopDrone();
         this.droneGain = this.audioCtx.createGain();
+        const filter = this.audioCtx.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(500, this.audioCtx.currentTime);
+        filter.Q.setValueAtTime(0.5, this.audioCtx.currentTime);
         const root = this.getFreq(this.selectedDrone);
-        [0.5, 1, 1.5, 2].forEach((m, i) => {
+        const harmonics = [
+            { mult: 1,   type: 'triangle', gain: 0.4 }, 
+            { mult: 1.5, type: 'triangle', gain: 0.25 },
+            { mult: 2,   type: 'sine',     gain: 0.15 },
+            { mult: 0.5, type: 'sine',     gain: 0.2 }  
+        ];
+        harmonics.forEach((h) => {
             const o = this.audioCtx.createOscillator();
-            o.type = i === 0 ? 'sine' : 'sawtooth';
-            o.frequency.setValueAtTime(root * m, this.audioCtx.currentTime);
+            o.type = h.type;
+            o.frequency.setValueAtTime(root * h.mult, this.audioCtx.currentTime);
             const g = this.audioCtx.createGain();
-            g.gain.value = [0.4, 0.2, 0.1, 0.05][i];
-            o.connect(g); g.connect(this.droneGain);
+            g.gain.value = h.gain;
+            o.connect(g); g.connect(filter);
             o.start(); this.droneOscs.push(o);
         });
         const vol = document.getElementById('drone-volume').value;
-        this.droneGain.gain.setValueAtTime(vol, this.audioCtx.currentTime);
-        this.droneGain.connect(this.audioCtx.destination);
+        this.droneGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
+        this.droneGain.gain.linearRampToValueAtTime(vol, this.audioCtx.currentTime + 1.2);
+        filter.connect(this.droneGain); this.droneGain.connect(this.audioCtx.destination);
     },
     updateDronePitch() {
         const root = this.getFreq(this.selectedDrone);
+        const multipliers = [1, 1.5, 2, 0.5]; 
         this.droneOscs.forEach((o, i) => {
-            o.frequency.setTargetAtTime(root * [0.5, 1, 1.5, 2][i], this.audioCtx.currentTime, 0.1);
+            o.frequency.setTargetAtTime(root * multipliers[i], this.audioCtx.currentTime, 0.4);
         });
     },
     stopDrone() {
@@ -91,7 +103,6 @@ const App = {
         for(let i=d; i<data.length; i++) { if(c[i]>maxV) { maxV=c[i]; maxP=i; } }
         return sr/maxP;
     },
-    // UNTOUCHED Spectrogram logic
     drawHistogram() {
         const c = document.getElementById('history-canvas'); if(!c) return;
         const ctx = c.getContext('2d'); const w = c.width, h = c.height;
@@ -125,7 +136,6 @@ const App = {
                 document.getElementById('note-octave').innerText = Math.floor((h+9)/12)+4;
                 document.getElementById('frequency').innerText = f.toFixed(1);
                 const needle = document.getElementById('tuner-needle');
-                // Center the needle movement (cents is -50 to +50)
                 needle.style.transform = `translateX(${(cents/50)*40}vw)`; 
                 this.currentCenterMidi += ( (12*Math.log2(f/440)+69) - this.currentCenterMidi) * 0.1;
                 this.pitchHistory.push(f);
