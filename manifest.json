@@ -1,17 +1,16 @@
 {
+  "short_name": "SonicTool",
   "name": "Sonic-Ambient-Tool",
-  "short_name": "SonicAmbient",
-  "start_url": "index.html",
-  "display": "standalone",
-  "background_color": "#0b0f1a",
-  "theme_color": "#0ea5e9",
-  "orientation": "portrait",
   "icons": [
     {
-      "src": "icon.png",
-      "sizes": "512x512",
+      "src": "https://via.placeholder.com/192/0ea5e9/ffffff?text=S",
       "type": "image/png",
-      "purpose": "any maskable"
+      "sizes": "192x192"
     }
-  ]
+  ],
+  "start_url": "./index.html",
+  "background_color": "#0b0f1a",
+  "display": "standalone",
+  "scope": "./",
+  "theme_color": "#0b0f1a"
 }
