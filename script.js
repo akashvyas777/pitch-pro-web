@@ -1,23 +1,19 @@
 const App = {
     audioCtx: null,
     analyser: null,
-    buf: new Float32Array(2048),
+    // Increased buffer for better low-frequency resolution
+    buf: new Float32Array(4096), 
     isPaused: false,
     
-    // Smoothing & Histogram Data
     pitchHistory: [], 
     maxHistory: 150,
+    
+    // Advanced Stability
     smoothingWindow: [],
-    smoothingSize: 6,
-    currentCenterMidi: 60, // Default to Middle C
+    smoothingSize: 10, // Larger window for deep notes
+    currentCenterMidi: 60,
 
-    // Range Data
     minFreq: Infinity, maxFreq: -Infinity,
-
-    // Metronome
-    isMetroOn: false, tempo: 120,
-
-    // Config
     refA4: 440, threshold: 0.015, notation: 'english',
     notes: {
         english: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
@@ -61,7 +57,8 @@ const App = {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const source = this.audioCtx.createMediaStreamSource(stream);
             this.analyser = this.audioCtx.createAnalyser();
-            this.analyser.fftSize = 2048;
+            // Critical: Larger FFT size for Bass/Low-end detail
+            this.analyser.fftSize = 4096; 
             source.connect(this.analyser);
             document.getElementById('modal-permission').style.display = 'none';
             this.resizeCanvas();
@@ -80,20 +77,46 @@ const App = {
         setTimeout(() => this.playTick(), (60 / this.tempo) * 1000);
     },
 
+    // Improved Autocorrelation for Low Frequencies
     detectPitch(data, sr) {
         let sum = 0;
         for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-        if (Math.sqrt(sum / data.length) < this.threshold) return -1;
+        const rms = Math.sqrt(sum / data.length);
+        if (rms < this.threshold) return -1;
+
+        // Downsampling check: For very low frequencies, we focus on the macro-pattern
         let c = new Float32Array(data.length).fill(0);
         for (let i = 0; i < data.length; i++) {
-            for (let j = 0; j < data.length - i; j++) c[i] += data[j] * data[j + i];
+            for (let j = 0; j < data.length - i; j++) {
+                c[i] += data[j] * data[j + i];
+            }
         }
+
         let d = 0; while (c[d] > c[d + 1]) d++;
         let maxVal = -1, maxPos = -1;
         for (let i = d; i < data.length; i++) {
-            if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+            if (c[i] > maxVal) {
+                maxVal = c[i];
+                maxPos = i;
+            }
         }
-        return sr / maxPos;
+
+        // Quadratic interpolation for sub-bin accuracy (Essential for Bass)
+        let finalPos = maxPos;
+        if (maxPos > 0 && maxPos < data.length - 1) {
+            const a = c[maxPos - 1];
+            const b = c[maxPos];
+            const e = c[maxPos + 1];
+            finalPos = maxPos + (e - a) / (2 * (2 * b - a - e));
+        }
+
+        return sr / finalPos;
+    },
+
+    // Median Filter: Ignores random jumps, keeps the "truth"
+    getMedian(arr) {
+        const sorted = [...arr].sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length / 2)];
     },
 
     drawHistogram() {
@@ -104,24 +127,15 @@ const App = {
         const h = canvas.height;
         ctx.clearRect(0, 0, w, h);
 
-        // Define the visible range (2 octaves total)
         const range = 24; 
         const minY = this.currentCenterMidi - (range / 2);
         const maxY = this.currentCenterMidi + (range / 2);
 
-        // Draw Piano Roll horizontal lines for ALL notes in range
         for (let m = Math.floor(minY); m <= Math.ceil(maxY); m++) {
             const y = h - ((m - minY) / range) * h;
-            
-            // Draw line
             ctx.strokeStyle = (m % 12 === 0) ? '#334155' : '#1e293b'; 
             ctx.lineWidth = (m % 12 === 0) ? 2 : 1;
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(w, y);
-            ctx.stroke();
-
-            // Label notes
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
             ctx.fillStyle = (m % 12 === 0) ? '#94a3b8' : '#475569';
             ctx.font = '12px sans-serif';
             ctx.fillText(this.midiToNoteName(m), 10, y - 5);
@@ -129,7 +143,6 @@ const App = {
 
         if (this.pitchHistory.length < 2) return;
 
-        // Draw Pitch Line with Gradient (similar to your image)
         ctx.lineWidth = 4;
         ctx.lineJoin = 'round';
         ctx.shadowBlur = 15;
@@ -141,10 +154,7 @@ const App = {
             const midi = 12 * Math.log2(f / 440) + 69;
             const x = i * step;
             const y = h - ((midi - minY) / range) * h;
-            
-            // Dynamic Color based on pitch
             ctx.strokeStyle = `hsl(${(midi * 10) % 360}, 80%, 60%)`;
-            
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
         ctx.stroke();
@@ -166,7 +176,9 @@ const App = {
             if (raw !== -1 && raw < 2500) {
                 this.smoothingWindow.push(raw);
                 if (this.smoothingWindow.length > this.smoothingSize) this.smoothingWindow.shift();
-                const freq = this.smoothingWindow.reduce((a, b) => a + b) / this.smoothingWindow.length;
+                
+                // Use Median instead of Mean for jitter rejection
+                const freq = this.getMedian(this.smoothingWindow);
 
                 const h = Math.round(12 * Math.log2(freq / this.refA4));
                 const noteIdx = (h + 9) % 12;
@@ -174,7 +186,6 @@ const App = {
                 const oct = Math.floor((h + 9) / 12) + 4;
                 const cents = Math.floor(1200 * Math.log2(freq / (this.refA4 * Math.pow(2, h/12))));
 
-                // Update UI
                 document.getElementById('note-name').innerText = noteName;
                 document.getElementById('note-octave').innerText = oct;
                 document.getElementById('frequency').innerText = freq.toFixed(1);
@@ -183,9 +194,7 @@ const App = {
                 const percent = Math.max(-45, Math.min(45, (cents / 50) * 45)); 
                 needle.style.transform = `translateX(${percent}vw)`;
 
-                // Dynamic Histogram Centering
                 const targetMidi = 12 * Math.log2(freq / 440) + 69;
-                // Smoothly follow the pitch (Interpolation)
                 this.currentCenterMidi += (targetMidi - this.currentCenterMidi) * 0.1;
 
                 this.pitchHistory.push(freq);
