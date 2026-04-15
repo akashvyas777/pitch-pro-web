@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="https://via.placeholder.com/192/0ea5e9/ffffff?text=S">
+    <link rel="apple-touch-icon" href="icon.png">
 
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -18,7 +18,7 @@
     <div id="app">
         <header>
             <div class="status-bar">
-                <span id="connection-status">Engine Active</span>
+                <span>Engine Active</span>
                 <button id="freeze-btn" class="icon-btn"><i data-lucide="pause"></i></button>
             </div>
         </header>
@@ -41,9 +41,7 @@
 
             <section id="view-analyze" class="view">
                 <div class="full-spectrogram-card">
-                    <div class="canvas-wrapper optimized-wrapper">
-                        <canvas id="history-canvas"></canvas>
-                    </div>
+                    <canvas id="history-canvas"></canvas>
                 </div>
             </section>
 
