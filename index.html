@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>PitchPro Elite</title>
+    <title>Sonic-Ambient-Tool</title>
+    
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SonicAmbient">
+    
+    <link rel="apple-touch-icon" href="icon.png">
     <meta name="theme-color" content="#0b0f1a">
     
     <link rel="stylesheet" href="style.css">
@@ -30,6 +34,7 @@
                     </div>
                     <div class="hz-display"><span id="frequency">0.0</span> Hz</div>
                 </div>
+
                 <div class="tuner-container">
                     <div class="tuner-scale"><span>-50</span><span>0</span><span>+50</span></div>
                     <div class="center-line"></div>
@@ -40,11 +45,11 @@
 
             <section id="view-analyze" class="view">
                 <div class="card">
-                    <h3>Note Spectrogram</h3>
+                    <h3>Chromatic Spectrogram</h3>
                     <div class="canvas-wrapper">
                         <canvas id="history-canvas"></canvas>
                     </div>
-                    <p class="label-desc">Chromatic Grid Tracking</p>
+                    <p class="label-desc">Multi-Note Tracking Grid</p>
                 </div>
             </section>
 
@@ -57,6 +62,7 @@
                     <input type="range" id="bpm-slider" min="40" max="220" value="120">
                     <button id="metro-toggle" class="btn-primary" style="margin-top:15px;">Start</button>
                 </div>
+
                 <div class="card">
                     <h3>Pro Drone (Sub + Root + 5th + Oct)</h3>
                     <div class="drone-grid">
@@ -85,9 +91,11 @@
 
             <section id="view-settings" class="view">
                 <div class="card">
-                    <label>A4 Reference</label>
-                    <input type="number" id="setting-ref-pitch" value="440" style="margin-top:10px;">
-                    <p class="label-desc" style="margin-top:10px;">Standard: 440Hz</p>
+                    <div class="settings-group">
+                        <label>Calibration (A4)</label>
+                        <input type="number" id="setting-ref-pitch" value="440" style="margin-top:10px;">
+                        <p class="label-desc" style="margin-top:10px;">Standard Reference Frequency</p>
+                    </div>
                 </div>
             </section>
         </main>
@@ -102,18 +110,25 @@
 
     <div id="modal-permission" class="modal">
         <div class="modal-content">
-            <h2>Initialize PitchPro</h2>
-            <p>Ready to start? Enable microphone for professional-grade analysis.</p>
-            <button id="start-app-btn" class="btn-primary">Start Engine</button>
+            <h2>Sonic-Ambient-Tool</h2>
+            <p>Grant microphone access to initialize the high-stability pitch engine.</p>
+            <button id="start-app-btn" class="btn-primary">Initialize Engine</button>
         </div>
     </div>
 
     <script src="script.js"></script>
     <script>
         lucide.createIcons();
-        // Register Service Worker for PWA compatibility
+        
+        // Service Worker Registration for Standalone Mode
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(() => {});
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('Sonic-Ambient-Tool Service Worker active.');
+                }).catch(err => {
+                    console.log('SW registration failed: ', err);
+                });
+            });
         }
     </script>
 </body>
