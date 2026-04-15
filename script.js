@@ -1,18 +1,13 @@
 const App = {
     audioCtx: null, analyser: null,
-    buf: new Float32Array(4096), // High-depth for low frequency accuracy
+    buf: new Float32Array(4096), 
     isPaused: false,
-    
     pitchHistory: [], maxHistory: 150,
     smoothingWindow: [], smoothingSize: 10,
     currentCenterMidi: 60,
-
-    // Drone & Metro State
     droneOscs: [], droneGain: null, droneActive: false,
     selectedDrone: "C", isMetroOn: false, tempo: 120,
-
     refA4: 440, threshold: 0.015,
-    // Notes locked to Chromatic Scale only
     chromatic: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
 
     init() {
@@ -28,8 +23,6 @@ const App = {
             document.querySelector('#freeze-btn i').setAttribute('data-lucide', this.isPaused ? 'play' : 'pause');
             lucide.createIcons();
         };
-
-        // Metronome
         document.getElementById('bpm-slider').oninput = (e) => {
             this.tempo = e.target.value;
             document.getElementById('bpm-value').innerText = this.tempo;
@@ -39,8 +32,6 @@ const App = {
             e.target.innerText = this.isMetroOn ? 'Stop' : 'Start';
             if(this.isMetroOn) this.playTick();
         };
-
-        // Drone Control
         document.querySelectorAll('.drone-note').forEach(btn => {
             btn.onclick = () => {
                 document.querySelectorAll('.drone-note').forEach(b => b.classList.remove('selected'));
@@ -49,12 +40,12 @@ const App = {
                 if(this.droneActive) this.updateDrone();
             };
         });
-
         document.getElementById('drone-toggle').onclick = () => {
             this.droneActive = !this.droneActive;
             document.getElementById('drone-toggle').innerText = this.droneActive ? 'Stop Drone' : 'Play Drone';
             this.droneActive ? this.startDrone() : this.stopDrone();
         };
+        document.getElementById('setting-ref-pitch').onchange = (e) => this.refA4 = parseFloat(e.target.value);
     },
 
     async start() {
@@ -68,7 +59,7 @@ const App = {
             document.getElementById('modal-permission').style.display = 'none';
             this.resizeCanvas();
             this.loop();
-        } catch (e) { alert("Microphone access is required."); }
+        } catch (e) { alert("Mic access denied."); }
     },
 
     playTick() {
@@ -86,40 +77,29 @@ const App = {
         this.droneOscs = [];
         this.droneGain = this.audioCtx.createGain();
         const filter = this.audioCtx.createBiquadFilter();
-        
         filter.type = "lowpass"; filter.frequency.value = 450;
         const root = this.getFreq(this.selectedDrone);
-        // Added 0.5 (Sub-Octave) for massive depth
         const harmonics = [0.5, 1, 1.5, 2]; 
-
         harmonics.forEach((ratio, i) => {
             const osc = this.audioCtx.createOscillator();
             osc.type = "sawtooth";
             osc.frequency.value = root * ratio;
             const oscGain = this.audioCtx.createGain();
-            // Balanced volumes: Sub and Root are loudest
             oscGain.gain.value = (i === 1) ? 0.7 : (i === 0) ? 0.6 : (i === 2) ? 0.3 : 0.15;
-            osc.connect(oscGain);
-            oscGain.connect(filter);
+            osc.connect(oscGain); oscGain.connect(filter);
             this.droneOscs.push(osc);
         });
-
         const vol = document.getElementById('drone-volume').value;
         this.droneGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
         this.droneGain.gain.linearRampToValueAtTime(vol, this.audioCtx.currentTime + 1.2);
-
-        filter.connect(this.droneGain);
-        this.droneGain.connect(this.audioCtx.destination);
+        filter.connect(this.droneGain); this.droneGain.connect(this.audioCtx.destination);
         this.droneOscs.forEach(o => o.start());
     },
 
     stopDrone() {
         if(this.droneGain) {
             this.droneGain.gain.linearRampToValueAtTime(0, this.audioCtx.currentTime + 0.8);
-            setTimeout(() => { 
-                if(this.droneOscs) this.droneOscs.forEach(o => { try{o.stop();}catch(e){} });
-                this.droneOscs = [];
-            }, 800);
+            setTimeout(() => { if(this.droneOscs) this.droneOscs.forEach(o => { try{o.stop();}catch(e){} }); this.droneOscs = []; }, 800);
         }
     },
 
@@ -146,7 +126,6 @@ const App = {
         let d=0; while (c[d]>c[d+1]) d++;
         let maxVal = -1, maxPos = -1;
         for (let i=d; i<data.length; i++) { if (c[i]>maxVal) { maxVal=c[i]; maxPos=i; } }
-        
         let finalPos = maxPos;
         if (maxPos > 0 && maxPos < data.length - 1) {
             const a = c[maxPos - 1], b = c[maxPos], e = c[maxPos + 1];
@@ -166,25 +145,17 @@ const App = {
         const ctx = canvas.getContext('2d');
         const w = canvas.width, h = canvas.height;
         ctx.clearRect(0,0,w,h);
-
         const range = 24; 
         const minY = this.currentCenterMidi - 12, maxY = this.currentCenterMidi + 12;
 
-        // FIXED: Rendering ALL semitone labels in the current view
         for (let m = Math.floor(minY); m <= Math.ceil(maxY); m++) {
             const y = h - ((m-minY)/range)*h;
-            
-            // Major lines for C, minor lines for others
             ctx.strokeStyle = (m%12===0) ? '#334155' : '#1e293b';
             ctx.lineWidth = (m%12===0) ? 2 : 1;
             ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
-            
-            // Note Labels for EVERY semitone
             ctx.fillStyle = (m%12===0) ? '#94a3b8' : '#475569';
             ctx.font = '11px monospace';
-            const noteName = this.chromatic[((m % 12) + 12) % 12];
-            const octave = Math.floor(m / 12) - 1;
-            ctx.fillText(noteName + octave, 10, y - 5);
+            ctx.fillText(this.chromatic[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1), 10, y - 5);
         }
 
         if (this.pitchHistory.length < 2) return;
@@ -208,22 +179,15 @@ const App = {
                 this.smoothingWindow.push(raw);
                 if(this.smoothingWindow.length > this.smoothingSize) this.smoothingWindow.shift();
                 const freq = this.getMedian(this.smoothingWindow);
-
                 const h = Math.round(12 * Math.log2(freq/this.refA4));
                 const cents = Math.floor(1200 * Math.log2(freq/(this.refA4 * Math.pow(2, h/12))));
-
-                // Update Main Tuner UI
                 document.getElementById('note-name').innerText = this.chromatic[((h+9)%12 + 12) % 12];
                 document.getElementById('note-octave').innerText = Math.floor((h+9)/12)+4;
                 document.getElementById('frequency').innerText = freq.toFixed(1);
-                
                 const needle = document.getElementById('tuner-needle');
                 needle.style.transform = `translateX(${(cents/50)*45}vw)`;
-
-                // Smoothly follow pitch in Spectrogram
                 const targetMidi = 12 * Math.log2(freq/440) + 69;
                 this.currentCenterMidi += (targetMidi - this.currentCenterMidi) * 0.1;
-
                 this.pitchHistory.push(freq);
                 if(this.pitchHistory.length > this.maxHistory) this.pitchHistory.shift();
                 this.drawHistogram();
@@ -248,5 +212,4 @@ const App = {
         });
     }
 };
-
 App.init();
