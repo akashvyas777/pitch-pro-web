@@ -14,12 +14,15 @@ const App = {
         document.querySelectorAll('.drone-note').forEach(b => b.onclick = () => {
             document.querySelectorAll('.drone-note').forEach(x => x.classList.remove('selected'));
             b.classList.add('selected'); this.selectedDrone = b.dataset.note;
-            if(this.droneActive) this.updateDrone();
+            if(this.droneActive) this.updateDronePitch();
         });
         document.getElementById('drone-toggle').onclick = () => {
             this.droneActive = !this.droneActive;
             document.getElementById('drone-toggle').innerText = this.droneActive ? 'Stop Drone' : 'Play Drone';
             this.droneActive ? this.startDrone() : this.stopDrone();
+        };
+        document.getElementById('drone-volume').oninput = (e) => {
+            if(this.droneGain) this.droneGain.gain.setTargetAtTime(e.target.value, this.audioCtx.currentTime, 0.05);
         };
     },
     async start() {
@@ -46,24 +49,37 @@ const App = {
         osc.start(); osc.stop(this.audioCtx.currentTime + 0.05);
         this.metroTimeout = setTimeout(() => this.playTick(), (60 / this.tempo) * 1000);
     },
+    // DRONE: Continuous Play Fix
     startDrone() {
-        this.stopDrone();
+        if(this.droneOscs.length > 0) this.stopDrone();
         this.droneGain = this.audioCtx.createGain();
         const root = this.getFreq(this.selectedDrone);
         [0.5, 1, 1.5, 2].forEach((m, i) => {
-            const o = this.audioCtx.createOscillator(); o.type = i === 0 ? 'sine' : 'sawtooth';
-            o.frequency.value = root * m; const g = this.audioCtx.createGain();
+            const o = this.audioCtx.createOscillator();
+            o.type = i === 0 ? 'sine' : 'sawtooth';
+            o.frequency.setValueAtTime(root * m, this.audioCtx.currentTime);
+            const g = this.audioCtx.createGain();
             g.gain.value = [0.4, 0.2, 0.1, 0.05][i];
-            o.connect(g); g.connect(this.droneGain); o.start(); this.droneOscs.push(o);
+            o.connect(g); g.connect(this.droneGain);
+            o.start(); this.droneOscs.push(o);
         });
-        this.droneGain.gain.value = document.getElementById('drone-volume').value;
+        const vol = document.getElementById('drone-volume').value;
+        this.droneGain.gain.setValueAtTime(vol, this.audioCtx.currentTime);
         this.droneGain.connect(this.audioCtx.destination);
     },
-    stopDrone() {
-        if (this.droneGain) this.droneGain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.05);
-        setTimeout(() => { this.droneOscs.forEach(o => { try{o.stop();}catch(e){} }); this.droneOscs = []; }, 100);
+    updateDronePitch() {
+        const root = this.getFreq(this.selectedDrone);
+        this.droneOscs.forEach((o, i) => {
+            o.frequency.setTargetAtTime(root * [0.5, 1, 1.5, 2][i], this.audioCtx.currentTime, 0.1);
+        });
     },
-    updateDrone() { this.startDrone(); },
+    stopDrone() {
+        if (this.droneGain) this.droneGain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.1);
+        setTimeout(() => { 
+            this.droneOscs.forEach(o => { try{o.stop();}catch(e){} }); 
+            this.droneOscs = []; 
+        }, 150);
+    },
     getFreq(n) { return {"C":130.8,"C#":138.6,"D":146.8,"D#":155.6,"E":164.8,"F":174.6,"F#":185,"G":196,"G#":207.7,"A":220,"A#":233.1,"B":246.9}[n]; },
     detectPitch(data, sr) {
         let sum = 0; for(let i=0; i<data.length; i++) sum += data[i]*data[i];
@@ -75,6 +91,7 @@ const App = {
         for(let i=d; i<data.length; i++) { if(c[i]>maxV) { maxV=c[i]; maxP=i; } }
         return sr/maxP;
     },
+    // UNTOUCHED Spectrogram logic
     drawHistogram() {
         const c = document.getElementById('history-canvas'); if(!c) return;
         const ctx = c.getContext('2d'); const w = c.width, h = c.height;
@@ -108,6 +125,7 @@ const App = {
                 document.getElementById('note-octave').innerText = Math.floor((h+9)/12)+4;
                 document.getElementById('frequency').innerText = f.toFixed(1);
                 const needle = document.getElementById('tuner-needle');
+                // Center the needle movement (cents is -50 to +50)
                 needle.style.transform = `translateX(${(cents/50)*40}vw)`; 
                 this.currentCenterMidi += ( (12*Math.log2(f/440)+69) - this.currentCenterMidi) * 0.1;
                 this.pitchHistory.push(f);
