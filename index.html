@@ -16,7 +16,7 @@
         <header>
             <div class="status-bar">
                 <span>Engine Active</span>
-                <button id="freeze-btn"><i data-lucide="pause"></i></button>
+                <button id="freeze-btn" class="icon-btn"><i data-lucide="pause"></i></button>
             </div>
         </header>
 
@@ -55,25 +55,17 @@
                         <button class="drone-note" data-note="C">C</button>
                         <button class="drone-note" data-note="C#">C#</button>
                         <button class="drone-note" data-note="D">D</button>
-                        <button class="drone-note" data-note="D#">D#</button>
-                        <button class="drone-note" data-note="E">E</button>
-                        <button class="drone-note" data-note="F">F</button>
-                        <button class="drone-note" data-note="F#">F#</button>
                         <button class="drone-note" data-note="G">G</button>
-                        <button class="drone-note" data-note="G#">G#</button>
-                        <button class="drone-note" data-note="A">A</button>
-                        <button class="drone-note" data-note="A#">A#</button>
-                        <button class="drone-note" data-note="B">B</button>
                     </div>
                     <button id="drone-toggle" class="btn-secondary">Play Drone</button>
-                    <input type="range" id="drone-volume" min="0" max="1" step="0.1" value="0.5" style="margin-top:10px;">
+                    <input type="range" id="drone-volume" min="0" max="1" step="0.1" value="0.5" style="margin-top:15px; width:100%;">
                 </div>
             </section>
 
             <section id="view-settings" class="view">
                 <div class="card">
                     <label>A4 Calibration</label>
-                    <input type="number" id="setting-ref-pitch" value="440">
+                    <input type="number" id="setting-ref-pitch" value="440" step="1">
                 </div>
             </section>
         </main>
@@ -88,7 +80,7 @@
 
     <div id="modal-permission" class="modal">
         <div class="modal-content">
-            <h2>Sonic-Ambient-Tool</h2>
+            <h2 style="margin-bottom:20px;">Sonic-Ambient-Tool</h2>
             <button id="start-app-btn" class="btn-primary">Start Engine</button>
         </div>
     </div>
