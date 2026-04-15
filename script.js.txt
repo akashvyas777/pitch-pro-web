@@ -1,0 +1,167 @@
+/** * PitchPro - Core Engine 
+ * Uses Autocorrelation for pitch detection
+ */
+
+const App = {
+    audioCtx: null,
+    analyser: null,
+    microphone: null,
+    isPaused: false,
+    currentPitch: 0,
+    confidence: 0,
+    history: [],
+    
+    // Settings
+    refPitch: 440,
+    threshold: 0.01,
+    bufferSize: 2048,
+    notation: 'english',
+    
+    notes: {
+        english: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+        solfege: ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si']
+    },
+
+    init() {
+        this.bindEvents();
+        this.setupNavigation();
+    },
+
+    async startAudio() {
+        try {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            this.microphone = this.audioCtx.createMediaStreamSource(stream);
+            this.analyser = this.audioCtx.createAnalyser();
+            this.analyser.fftSize = this.bufferSize;
+            
+            this.microphone.connect(this.analyser);
+            
+            document.getElementById('modal-permission').style.display = 'none';
+            document.getElementById('connection-status').innerText = 'Connected';
+            
+            this.update();
+        } catch (err) {
+            alert('Microphone access denied or not supported.');
+        }
+    },
+
+    bindEvents() {
+        document.getElementById('start-app-btn').onclick = () => this.startAudio();
+        
+        document.getElementById('freeze-btn').onclick = () => {
+            this.isPaused = !this.isPaused;
+            const icon = document.querySelector('#freeze-btn i');
+            icon.setAttribute('data-lucide', this.isPaused ? 'play' : 'pause');
+            lucide.createIcons();
+        };
+
+        // Settings updates
+        document.getElementById('setting-ref-pitch').onchange = (e) => this.refPitch = parseFloat(e.target.value);
+        document.getElementById('setting-notation').onchange = (e) => this.notation = e.target.value;
+    },
+
+    setupNavigation() {
+        const navItems = document.querySelectorAll('.nav-item');
+        navItems.forEach(item => {
+            item.onclick = () => {
+                navItems.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                
+                const target = item.getAttribute('data-view');
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                document.getElementById(`view-${target}`).classList.add('active');
+            };
+        });
+    },
+
+    // Pitch Detection using Autocorrelation
+    autoCorrelate(buffer, sampleRate) {
+        let SIZE = buffer.length;
+        let rms = 0;
+        for (let i = 0; i < SIZE; i++) {
+            rms += buffer[i] * buffer[i];
+        }
+        rms = Math.sqrt(rms / SIZE);
+        
+        // Signal too weak
+        if (rms < this.threshold) return -1;
+
+        let r1 = 0, r2 = SIZE - 1, thres = 0.2;
+        for (let i = 0; i < SIZE / 2; i++) {
+            if (Math.abs(buffer[i]) < thres) { r1 = i; break; }
+        }
+        for (let i = 1; i < SIZE / 2; i++) {
+            if (Math.abs(buffer[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+        }
+
+        buffer = buffer.slice(r1, r2);
+        SIZE = buffer.length;
+
+        let c = new Array(SIZE).fill(0);
+        for (let i = 0; i < SIZE; i++) {
+            for (let j = 0; j < SIZE - i; j++) {
+                c[i] = c[i] + buffer[j] * buffer[j + i];
+            }
+        }
+
+        let d = 0; while (c[d] > c[d + 1]) d++;
+        let maxval = -1, maxpos = -1;
+        for (let i = d; i < SIZE; i++) {
+            if (c[i] > maxval) {
+                maxval = c[i];
+                maxpos = i;
+            }
+        }
+        let T0 = maxpos;
+
+        return sampleRate / T0;
+    },
+
+    getNote(frequency) {
+        const h = Math.round(12 * Math.log2(frequency / this.refPitch));
+        const octave = Math.floor((h + 9) / 12) + 4;
+        const noteIdx = (h + 9) % 12;
+        const cents = Math.floor(1200 * Math.log2(frequency / (this.refPitch * Math.pow(2, (h / 12)))));
+        
+        return {
+            name: this.notes[this.notation][noteIdx < 0 ? noteIdx + 12 : noteIdx],
+            octave: octave,
+            cents: cents
+        };
+    },
+
+    update() {
+        if (this.isPaused) {
+            requestAnimationFrame(() => this.update());
+            return;
+        }
+
+        const buffer = new Float32Array(this.bufferSize);
+        this.analyser.getFloatTimeDomainData(buffer);
+        
+        const pitch = this.autoCorrelate(buffer, this.audioCtx.sampleRate);
+
+        if (pitch !== -1) {
+            const noteData = this.getNote(pitch);
+            
+            // Update UI
+            document.getElementById('note-name').innerText = noteData.name;
+            document.getElementById('note-octave').innerText = noteData.octave;
+            document.getElementById('frequency').innerText = pitch.toFixed(1);
+            
+            // Tuner Needle (-50 to +50 cents)
+            const needle = document.getElementById('tuner-needle');
+            const offset = Math.max(-50, Math.min(50, noteData.cents));
+            needle.style.transform = `translateX(${offset * 2}px)`;
+            
+            // Stability UI
+            document.getElementById('confidence-bar').style.width = '80%'; // Simplified
+        }
+
+        requestAnimationFrame(() => this.update());
+    }
+};
+
+App.init();
