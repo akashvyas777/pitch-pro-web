@@ -1,20 +1,33 @@
 const App = {
     audioCtx: null, analyser: null, buf: new Float32Array(2048), isPaused: false,
     pitchHistory: [], maxHistory: 100, currentCenterMidi: 60,
-    droneOscs: [], droneGain: null, droneActive: false, selectedDrone: "C", 
+    droneOscs: [], droneGain: null, droneActive: false, selectedDrone: "C",
+    isMetroOn: false, metroTimeout: null, tempo: 120,
     refA4: 440, chromatic: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
 
     init() { this.setupNav(); this.bindEvents(); },
     bindEvents() {
         document.getElementById('start-app-btn').onclick = () => this.start();
-        document.getElementById('freeze-btn').onclick = () => { this.isPaused = !this.isPaused; };
-        document.querySelectorAll('.drone-note').forEach(b => b.onclick = () => {
-            document.querySelectorAll('.drone-note').forEach(x => x.classList.remove('selected'));
-            b.classList.add('selected'); this.selectedDrone = b.dataset.note;
-            if(this.droneActive) this.updateDrone();
+        document.getElementById('freeze-btn').onclick = () => {
+            this.isPaused = !this.isPaused;
+            document.querySelector('#freeze-btn i').setAttribute('data-lucide', this.isPaused ? 'play' : 'pause');
+            lucide.createIcons();
+        };
+        document.getElementById('bpm-slider').oninput = (e) => {
+            this.tempo = e.target.value; document.getElementById('bpm-value').innerText = this.tempo;
+        };
+        document.getElementById('metro-toggle').onclick = () => this.toggleMetronome();
+        document.querySelectorAll('.drone-note').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.drone-note').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected'); this.selectedDrone = btn.dataset.note;
+                if(this.droneActive) this.updateDrone();
+            };
         });
         document.getElementById('drone-toggle').onclick = () => {
-            this.droneActive = !this.droneActive; this.droneActive ? this.startDrone() : this.stopDrone();
+            this.droneActive = !this.droneActive;
+            document.getElementById('drone-toggle').innerText = this.droneActive ? 'Stop Drone' : 'Play Drone';
+            this.droneActive ? this.startDrone() : this.stopDrone();
         };
     },
     async start() {
@@ -26,19 +39,52 @@ const App = {
         document.getElementById('modal-permission').style.display = 'none';
         this.resizeCanvas(); this.loop();
     },
+    // METRONOME FIX
+    toggleMetronome() {
+        this.isMetroOn = !this.isMetroOn;
+        document.getElementById('metro-toggle').innerText = this.isMetroOn ? 'Stop' : 'Start';
+        if (this.isMetroOn) this.playTick();
+        else clearTimeout(this.metroTimeout);
+    },
+    playTick() {
+        if (!this.isMetroOn) return;
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        osc.frequency.value = 1200;
+        gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.05);
+        osc.connect(gain); gain.connect(this.audioCtx.destination);
+        osc.start(); osc.stop(this.audioCtx.currentTime + 0.05);
+        this.metroTimeout = setTimeout(() => this.playTick(), (60 / this.tempo) * 1000);
+    },
+    // DRONE FIX (Rich Harmonics)
     startDrone() {
-        this.droneOscs = []; this.droneGain = this.audioCtx.createGain();
+        this.stopDrone();
+        this.droneGain = this.audioCtx.createGain();
         const root = this.getFreq(this.selectedDrone);
-        [0.5, 1, 1.5].forEach(r => {
-            const o = this.audioCtx.createOscillator(); o.type = 'sawtooth';
-            o.frequency.value = root * r; o.connect(this.droneGain); o.start();
-            this.droneOscs.push(o);
+        // Sub-bass, Root, and Fifth for a "Pro" ambient feel
+        [0.5, 1, 1.5, 2].forEach((mult, i) => {
+            const osc = this.audioCtx.createOscillator();
+            osc.type = i === 0 ? 'sine' : 'sawtooth'; // Sine for sub-bass
+            osc.frequency.value = root * mult;
+            const g = this.audioCtx.createGain();
+            g.gain.value = [0.4, 0.2, 0.1, 0.05][i];
+            osc.connect(g); g.connect(this.droneGain);
+            osc.start(); this.droneOscs.push(osc);
         });
-        this.droneGain.gain.value = document.getElementById('drone-volume').value;
+        const vol = document.getElementById('drone-volume').value;
+        this.droneGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
+        this.droneGain.gain.linearRampToValueAtTime(vol, this.audioCtx.currentTime + 0.5);
         this.droneGain.connect(this.audioCtx.destination);
     },
-    stopDrone() { this.droneOscs.forEach(o => o.stop()); this.droneOscs = []; },
-    updateDrone() { const root = this.getFreq(this.selectedDrone); this.droneOscs.forEach((o,i) => o.frequency.setTargetAtTime(root * [0.5,1,1.5][i], this.audioCtx.currentTime, 0.1)); },
+    stopDrone() {
+        if (this.droneGain) this.droneGain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.1);
+        setTimeout(() => {
+            this.droneOscs.forEach(o => { try { o.stop(); } catch(e) {} });
+            this.droneOscs = [];
+        }, 200);
+    },
+    updateDrone() { if(this.droneActive) this.startDrone(); },
     getFreq(n) { return {"C":130.8,"C#":138.6,"D":146.8,"D#":155.6,"E":164.8,"F":174.6,"F#":185,"G":196,"G#":207.7,"A":220,"A#":233.1,"B":246.9}[n]; },
     detectPitch(data, sr) {
         let sum = 0; for(let i=0; i<data.length; i++) sum += data[i]*data[i];
@@ -57,12 +103,13 @@ const App = {
         const range = 24; const minY = this.currentCenterMidi - 12;
         for(let m=Math.floor(minY); m<=minY+range; m++) {
             const y = h - ((m-minY)/range)*h;
-            ctx.strokeStyle = (m%12===0) ? '#444' : '#222';
+            ctx.strokeStyle = (m%12===0) ? '#444' : '#1e293b';
             ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
-            ctx.fillStyle = '#666'; ctx.fillText(this.chromatic[((m%12)+12)%12] + (Math.floor(m/12)-1), 5, y-5);
+            ctx.fillStyle = '#64748b'; ctx.font = '12px sans-serif';
+            ctx.fillText(this.chromatic[((m%12)+12)%12] + (Math.floor(m/12)-1), 10, y-5);
         }
         if(this.pitchHistory.length < 2) return;
-        ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 3; ctx.beginPath();
+        ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath();
         this.pitchHistory.forEach((f,i) => {
             if(!f) return;
             const m = 12 * Math.log2(f/440) + 69;
@@ -77,13 +124,23 @@ const App = {
             const f = this.detectPitch(this.buf, this.audioCtx.sampleRate);
             if(f > 0 && f < 2000) {
                 const h = Math.round(12 * Math.log2(f/this.refA4));
+                const cents = Math.floor(1200 * Math.log2(f / (this.refA4 * Math.pow(2, h/12))));
+                
+                // Update UI
                 document.getElementById('note-name').innerText = this.chromatic[((h+9)%12+12)%12];
+                document.getElementById('note-octave').innerText = Math.floor((h+9)/12)+4;
                 document.getElementById('frequency').innerText = f.toFixed(1);
+                
+                // TUNER NEEDLE FIX (Using percentage of the container)
+                const needle = document.getElementById('tuner-needle');
+                const moveX = (cents / 50) * 50; // Map -50/+50 cents to -50%/+50% offset
+                needle.style.transform = `translateX(${moveX}px)`; 
+
                 this.currentCenterMidi += ( (12*Math.log2(f/440)+69) - this.currentCenterMidi) * 0.1;
                 this.pitchHistory.push(f);
             } else { this.pitchHistory.push(null); }
             if(this.pitchHistory.length > this.maxHistory) this.pitchHistory.shift();
-            this.drawHistogram();
+            if(document.getElementById('view-analyze').classList.contains('active')) this.drawHistogram();
         }
         requestAnimationFrame(() => this.loop());
     },
