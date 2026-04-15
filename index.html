@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PitchPro - Professional Tuner & Analyzer</title>
+    <title>PitchPro - Tuner & Drone</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -11,7 +11,7 @@
     <div id="app">
         <header>
             <div class="status-bar">
-                <span id="connection-status">System Ready</span>
+                <span id="connection-status">Engine Ready</span>
                 <button id="freeze-btn" class="icon-btn"><i data-lucide="pause"></i></button>
             </div>
         </header>
@@ -27,11 +27,7 @@
                 </div>
 
                 <div class="tuner-container">
-                    <div class="tuner-scale">
-                        <span>-50</span>
-                        <span>0</span>
-                        <span>+50</span>
-                    </div>
+                    <div class="tuner-scale"><span>-50</span><span>0</span><span>+50</span></div>
                     <div class="center-line"></div>
                     <div id="tuner-needle"></div>
                 </div>
@@ -40,11 +36,11 @@
 
             <section id="view-analyze" class="view">
                 <div class="card">
-                    <h3>Pitch vs Notation</h3>
+                    <h3>Spectrogram</h3>
                     <div class="canvas-wrapper">
                         <canvas id="history-canvas"></canvas>
                     </div>
-                    <p class="label-desc">Real-time Vocal Tracking</p>
+                    <p class="label-desc">Scroll-Lock Pitch Tracking</p>
                 </div>
             </section>
 
@@ -57,32 +53,45 @@
                     <input type="range" id="bpm-slider" min="40" max="220" value="120">
                     <button id="metro-toggle" class="btn-primary" style="margin-top:15px;">Start Metronome</button>
                 </div>
+
                 <div class="card">
-                    <h3>Vocal Range</h3>
-                    <div class="range-grid">
-                        <div><p class="label-desc">LOWEST</p><span id="range-low">--</span></div>
-                        <div><p class="label-desc">HIGHEST</p><span id="range-high">--</span></div>
+                    <h3>Reference Drone</h3>
+                    <div class="drone-grid">
+                        <button class="drone-note" data-note="C">C</button>
+                        <button class="drone-note" data-note="C#">C#</button>
+                        <button class="drone-note" data-note="D">D</button>
+                        <button class="drone-note" data-note="D#">D#</button>
+                        <button class="drone-note" data-note="E">E</button>
+                        <button class="drone-note" data-note="F">F</button>
+                        <button class="drone-note" data-note="F#">F#</button>
+                        <button class="drone-note" data-note="G">G</button>
+                        <button class="drone-note" data-note="G#">G#</button>
+                        <button class="drone-note" data-note="A">A</button>
+                        <button class="drone-note" data-note="A#">A#</button>
+                        <button class="drone-note" data-note="B">B</button>
                     </div>
-                    <button id="reset-range" class="btn-secondary">Reset Tracking</button>
+                    <div class="drone-controls">
+                        <button id="drone-toggle" class="btn-secondary">Play Drone</button>
+                        <div class="volume-row">
+                            <i data-lucide="volume-2"></i>
+                            <input type="range" id="drone-volume" min="0" max="1" step="0.1" value="0.5">
+                        </div>
+                    </div>
                 </div>
             </section>
 
             <section id="view-settings" class="view">
                 <div class="card">
                     <div class="settings-group">
-                        <label>Notation System</label>
+                        <label>Notation</label>
                         <select id="setting-notation">
-                            <option value="english">C D E F G A B</option>
-                            <option value="solfege">Do Re Mi Fa Sol La Si</option>
+                            <option value="english">Standard (A, B, C)</option>
+                            <option value="solfege">Solfege (Do, Re, Mi)</option>
                         </select>
                     </div>
                     <div class="settings-group">
-                        <label>Reference Pitch (A4)</label>
-                        <input type="number" id="setting-ref-pitch" value="440" step="1">
-                    </div>
-                    <div class="settings-group">
-                        <label>Noise Threshold</label>
-                        <input type="range" id="setting-threshold" min="0.005" max="0.05" step="0.005" value="0.015">
+                        <label>A4 Reference</label>
+                        <input type="number" id="setting-ref-pitch" value="440">
                     </div>
                 </div>
             </section>
@@ -98,12 +107,9 @@
 
     <div id="modal-permission" class="modal">
         <div class="modal-content">
-            <div style="background: #0ea5e922; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
-                <i data-lucide="mic" style="color: #0ea5e9;"></i>
-            </div>
-            <h2>PitchPro Live</h2>
-            <p>Ready to tune? Grant microphone access to start real-time detection.</p>
-            <button id="start-app-btn" class="btn-primary">Initialize Engine</button>
+            <h2>Microphone Required</h2>
+            <p>Grant access to enable the high-stability pitch engine.</p>
+            <button id="start-app-btn" class="btn-primary">Enable Microphone</button>
         </div>
     </div>
 
