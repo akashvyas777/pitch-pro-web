@@ -3,29 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>SonicTool</title>
+    <title>Sonic-Ambient-Tool</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body>
+<body class="dark-mode">
     <div id="app">
-        <header><div class="status-bar"><span>Active</span><button id="freeze-btn" style="background:none; border:none; color:white;"><i data-lucide="pause"></i></button></div></header>
-        <main>
+        <header>
+            <div class="status-bar">
+                <span id="connection-status">Engine Active</span>
+                <button id="freeze-btn" class="icon-btn"><i data-lucide="pause"></i></button>
+            </div>
+        </header>
+
+        <main id="view-container">
             <section id="view-tune" class="view active">
-                <div class="pitch-display"><h1 id="note-name">--</h1><div id="frequency">0.0 Hz</div></div>
+                <div class="pitch-display">
+                    <div class="note-info">
+                        <h1 id="note-name">--</h1>
+                        <span id="note-octave"></span>
+                    </div>
+                    <div class="hz-display"><span id="frequency">0.0</span> Hz</div>
+                </div>
                 <div class="tuner-container">
                     <div class="tuner-scale"><span>-50</span><span>0</span><span>+50</span></div>
                     <div class="center-line"></div>
                     <div id="tuner-needle"></div>
                 </div>
             </section>
-            <section id="view-analyze" class="view"><div class="full-spectrogram-container"><canvas id="history-canvas"></canvas></div></section>
-            <section id="view-practice" class="view">
-                <div class="card"><h3>Metronome</h3><div id="bpm-value" style="font-size:2rem; font-weight:bold;">120</div><input type="range" id="bpm-slider" min="40" max="220" value="120" style="width:100%;"><button id="metro-toggle" class="btn-primary" style="margin-top:10px;">Start</button></div>
-                <div class="card"><h3>Drone</h3><div class="drone-grid"><button class="drone-note" data-note="C">C</button><button class="drone-note" data-note="C#">C#</button><button class="drone-note" data-note="D">D</button><button class="drone-note" data-note="G">G</button></div><button id="drone-toggle" class="btn-primary">Play Drone</button></div>
+
+            <section id="view-analyze" class="view">
+                <div class="full-spectrogram-card">
+                    <div class="canvas-wrapper optimized-wrapper">
+                        <canvas id="history-canvas"></canvas>
+                    </div>
+                </div>
             </section>
-            <section id="view-settings" class="view"><div class="card">A4 Calibration: 440Hz</div></section>
+
+            <section id="view-practice" class="view">
+                <div class="card">
+                    <h3>Metronome</h3>
+                    <div class="tempo-display"><span id="bpm-value">120</span> <small>BPM</small></div>
+                    <input type="range" id="bpm-slider" min="40" max="220" value="120">
+                    <button id="metro-toggle" class="btn-primary" style="margin-top:15px;">Start</button>
+                </div>
+                <div class="card">
+                    <h3>Tanpura Drone</h3>
+                    <div class="drone-grid">
+                        <button class="drone-note" data-note="C">C</button>
+                        <button class="drone-note" data-note="C#">C#</button>
+                        <button class="drone-note" data-note="D">D</button>
+                        <button class="drone-note" data-note="D#">D#</button>
+                        <button class="drone-note" data-note="E">E</button>
+                        <button class="drone-note" data-note="F">F</button>
+                        <button class="drone-note" data-note="F#">F#</button>
+                        <button class="drone-note" data-note="G">G</button>
+                        <button class="drone-note" data-note="G#">G#</button>
+                        <button class="drone-note" data-note="A">A</button>
+                        <button class="drone-note" data-note="A#">A#</button>
+                        <button class="drone-note" data-note="B">B</button>
+                    </div>
+                    <button id="drone-toggle" class="btn-secondary">Play Drone</button>
+                    <div class="volume-row" style="margin-top:15px; display:flex; align-items:center; gap:10px;">
+                        <i data-lucide="volume-2"></i>
+                        <input type="range" id="drone-volume" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+                </div>
+            </section>
+
+            <section id="view-settings" class="view">
+                <div class="card">
+                    <label>A4 Calibration</label>
+                    <input type="number" id="setting-ref-pitch" value="440">
+                </div>
+            </section>
         </main>
+
         <nav class="bottom-nav">
             <button class="nav-item active" data-view="tune"><i data-lucide="music"></i><span>Tune</span></button>
             <button class="nav-item" data-view="analyze"><i data-lucide="activity"></i><span>Analyze</span></button>
@@ -33,7 +86,15 @@
             <button class="nav-item" data-view="settings"><i data-lucide="settings"></i><span>Settings</span></button>
         </nav>
     </div>
-    <div id="modal-permission" class="modal"><button id="start-app-btn" class="btn-primary" style="width:200px;">Start Engine</button></div>
-    <script src="script.js"></script><script>lucide.createIcons();</script>
+
+    <div id="modal-permission" class="modal">
+        <div class="modal-content">
+            <h2>Sonic-Ambient-Tool</h2>
+            <p>Initialize engine for professional analysis.</p>
+            <button id="start-app-btn" class="btn-primary">Start Engine</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+    <script>lucide.createIcons();</script>
 </body>
 </html>
